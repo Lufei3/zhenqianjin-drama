@@ -1,41 +1,21 @@
-# cast 视觉资产库目录指南（通用模板）
+# 视觉资产库
 
-本目录由**【窗口② 资产与首尾帧生产专员】**专属负责写入，其他窗口（分镜、视频）只读引用。严禁静默覆盖已锁版资产！
+从分镜派单领取当前批次的角色、场景和参考帧。样片派单通常位于 `shots/pilot/EXX_assets_todo.json`，整集派单在分镜 JSON 同目录。优先制作场内需要的定妆参考、可复用的场景参考和即将开拍的首帧。多个镜头共用场景图时，在分镜里填 `refs.scene_plate`，由资产用它对齐首帧的布局、方向与主光。
 
-## 目录与资产规范
+| 位置 | 放什么 |
+|---|---|
+| `cast/` | 角色、场景、道具的验收参考图及其设定卡，沿用 `<名称>.<状态>.png`。普通对白场可先用单张定妆照，角色卡设定段写 `参考版式：定妆照`。需要全身结构或多个机位时，再补三视图或全景。 |
+| `cast/frames/` | Mode A/A+ 的拍摄参考帧，例如 `E01_S01_first.png`；已过审且确实要接姿态的末帧也可入库。 |
+| `cast/sketch/`、`cast/blocking/`、`cast/storyboard/` | 构图草图、白模或故事板，只用于预演和协助生图。视频模型使用通过验收的成片风格参考。 |
+| `cast/canon/` | 跨集复用的设定与漂移记录。 |
 
-1. **根目录 `cast/`**：
-   - 存放新剧的核心视觉资产卡（`.md` 提示词 + `.png` 验收图）：
-     - 基础纯人物空手三视图：`cast/<角色>.默认.png`（严守双手自然下垂无外挂道具铁律，对齐模板 01）；
-     - 持械/背负/战损/表情变体：`cast/<角色>.<形态>.png`（从纯净基础卡派生）；
-     - 场景主控图：`cast/<场景>.默认.png`（对齐模板 02）；
-     - 场景多机位四宫格展板：`cast/<场景>.多机位展板.png`（用 `tools/slice_grid.py` 切割出反打/俯视/左侧/右侧机位）；
-     - 核心道具卡：`cast/<道具>.默认.png`（对齐模板 03）。
-   - **锁版文件**：`cast/LOCKED.json`（记录所有基础图 SHA-256）。
-2. **`cast/frames/`**：
-   - 存放 Mode A 专用首尾帧定姿关键帧（`cast/frames/EXX_SXX_first.png`）或从过审视频无损抽取的接力末帧（`tools/extract_last_frame.py`）；
-   - **锁版文件**：`cast/frames/LOCKED_FRAMES.json`。
-3. **`cast/blocking/`**：
-   - 存放单镜极简 3D 白模人偶站位图（`cast/blocking/EXX_SXX_blocking.png`，对齐模板 05）；
-   - **锁版文件**：`cast/blocking/LOCKED_BLOCKING.json`。
-4. **`cast/canon/`**：
-   - 跨集长剧典范总清单：`cast/canon/CANON.json` 与漂移审计日志 `DRIFT_LOG.md`。
-5. **`cast/storyboard/`**：
-   - 3D 导演台白模摆位截图（`.director.png`）与故事板；
-   - **红线**：仅供人眼审阅规划，永不允许作为 `--ref` 挂载给视频模型！
-
-## 常用工具命令
+先人工看图，检查脸、发型、服装、道具、人物位置、视线和场景光向是否适合下游镜头。返工候选用独立文件保存。挑中后从仓库根目录按文件锁版：
 
 ```bash
-# 1. 资产提示词推上画布前红线检查：
-python 02_规范与工具/tools/audit_cast.py cast/ --only-characters
-
-# 2. 四宫格场景展板无损切片（反打/俯视/左/右）：
-python 02_规范与工具/tools/slice_grid.py --input cast/<场景>.多机位展板.png
-
-# 3. 720 全景切片无损提取：
-python 02_规范与工具/tools/extract_pano.py --input cast/<场景>.全景720.png --yaw 0 --pitch 0 --fov 80 --output cast/<场景>.机位_平视.png
-
-# 4. 全部资产下载验收后一键全量锁版：
-python 02_规范与工具/tools/asset_lock.py lock --scope all --reason "本集资产全量锁版"
+python 02_规范与工具/tools/asset_lock.py lock --scope cast --file 'cast/场景名.默认.png' --reason '样片场景参考通过'
+python 02_规范与工具/tools/asset_lock.py lock --scope frames --file cast/frames/E01_S01_first.png --reason '样片 S01 首帧通过'
 ```
+
+同一范围可重复传 `--file`。图像锁表分别在 `cast/LOCKED.json` 和 `cast/frames/LOCKED_FRAMES.json`。换版前核对哪些镜头正在引用旧版，再按新文件调整分镜并锁定。哈希可以核对文件是否变化，素材质量以人工看片为准。
+
+资产可由项目绑定的通用画布准备。只在当前界面确认素材生成可用「0 积分畅用」时使用该队列，生成后挑图，再下载到库。工具入口及其他生产顺序见 [制作流程](../02_规范与工具/PIPELINE_SPEC.md)。

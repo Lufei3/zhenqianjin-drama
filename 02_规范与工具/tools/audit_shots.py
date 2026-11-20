@@ -14,7 +14,6 @@ audit_shots.py (PIPELINE_SPEC v4.0)
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import re
@@ -22,6 +21,9 @@ import sys
 import wave
 from pathlib import Path
 from typing import Any
+
+from asset_lock import load_lock_map, sha256_file
+from episode_spec import select_shots
 
 # 硬红线词库
 FORBIDDEN_REF_TOKENS = ("blocking/", "sketch/", "storyboard/", ".director.")
@@ -52,45 +54,22 @@ NATIVE_DURATIONS = {2.0, 2.5, 3.0, 4.0, 5.0}
 MAX_PROMPT_CHARS = 240
 
 
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def load_lock_map(root: Path) -> dict[str, str]:
-    lock_files = [
-        root / "cast" / "LOCKED.json",
-        root / "cast" / "frames" / "LOCKED_FRAMES.json",
-    ]
-    merged: dict[str, str] = {}
-    for lf in lock_files:
-        if not lf.exists():
-            continue
-        try:
-            data = json.loads(lf.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            continue
-        entries = data.get("files", data) if isinstance(data, dict) else {}
-        if isinstance(entries, dict):
-            for k, v in entries.items():
-                norm_key = k.replace("\\", "/")
-                if isinstance(v, str):
-                    merged[norm_key] = v
-                elif isinstance(v, dict) and isinstance(v.get("sha256"), str):
-                    merged[norm_key] = v["sha256"]
-    return merged
-
-
 def get_wav_duration(path: Path) -> float | None:
     try:
         with wave.open(str(path), "rb") as wf:
             frames = wf.getnframes()
             rate = wf.getframerate()
-            return frames / float(rate) if rate > 0 else None
-    except (wave.Error, OSError):
+            if frames <= 0 or rate <= 0:
+                return None
+            bytes_per_frame = wf.getnchannels() * wf.getsampwidth()
+            remaining = frames
+            while remaining > 0:
+                count = min(remaining, 8192)
+                if len(wf.readframes(count)) != count * bytes_per_frame:
+                    return None
+                remaining -= count
+            return frames / rate
+    except (wave.Error, EOFError, OSError):
         return None
 
 
@@ -110,6 +89,10 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
     errors: list[str] = []
     warnings: list[str] = []
     lock_map = {} if pre_mode else load_lock_map(root)
+
+    aspect_ratio = spec.get("aspect_ratio", "16:9")
+    if aspect_ratio not in ("16:9", "9:16"):
+        errors.append(f"[GLOBAL] aspect_ratio 必须为 16:9 或 9:16（当前为 {aspect_ratio!r}）")
 
     shots = spec.get("shots") or []
     if not shots:
@@ -196,7 +179,9 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
             errors.append(f"[{sid}] E4 未知生成模式：{mode}（仅支持 A / A+ / B）")
 
         # --- E5: native 模式台词字数公式校验 ---
-        if audio_mode == "native":
+        if audio_mode not in {"native", "sfx_only", "vo_lipsync"}:
+            errors.append(f"[{sid}] E5 未知音频模式：{audio_mode}（仅支持 native / sfx_only / vo_lipsync）")
+        elif audio_mode == "native":
             if not dialogue:
                 warnings.append(f"[{sid}] native 模式未填写 dialogue 字段")
             else:
@@ -212,15 +197,17 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
         # --- E6: vo_lipsync 音频先行校验 ---
         if audio_mode == "vo_lipsync":
             audio_file = shot.get("audio_file")
-            if not audio_file:
-                errors.append(f"[{sid}] E6 vo_lipsync 模式必须指定 audio_file")
+            if not isinstance(audio_file, str) or Path(audio_file).suffix.lower() != ".wav":
+                errors.append(f"[{sid}] E6 vo_lipsync 模式必须指定 WAV 格式的 audio_file")
             elif not pre_mode:
-                af_path = root / audio_file
-                if not af_path.exists():
+                af_path = root / audio_file.replace("\\", "/")
+                if not af_path.is_file():
                     errors.append(f"[{sid}] E6 找不到前置配音文件：{audio_file}")
-                elif af_path.suffix.lower() == ".wav":
+                else:
                     wav_dur = get_wav_duration(af_path)
-                    if wav_dur is not None and dur < wav_dur + 0.5:
+                    if wav_dur is None:
+                        errors.append(f"[{sid}] E6 前置配音不是可读取的非空 WAV 文件：{audio_file}")
+                    elif dur < wav_dur + 0.5:
                         errors.append(
                             f"[{sid}] E6 视频时长 {dur}s 短于配音 {wav_dur:.2f}s + 0.5s 气口要求"
                         )
@@ -245,9 +232,9 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
         # --- E10: 哈希锁版校验（生产模式） ---
         if not pre_mode:
             for p in video_ref_paths:
-                norm_p = p.replace("\\", "/")
+                norm_p = Path(p.replace("\\", "/")).as_posix()
                 full_p = root / norm_p
-                if not full_p.exists():
+                if not full_p.is_file():
                     errors.append(f"[{sid}] E10 挂载资产不存在：{norm_p}")
                     continue
                 expected = lock_map.get(norm_p)
@@ -298,6 +285,7 @@ def main() -> int:
     parser.add_argument("spec", help="分镜单源清单路径，如 shots/E01_spec.json")
     parser.add_argument("--root", default=".", help="项目根目录（默认当前目录）")
     parser.add_argument("--pre", action="store_true", help="预检模式：跳过磁盘资产与哈希锁校验")
+    parser.add_argument("--shots", nargs="+", help="仅检查指定镜号，例如 --shots S01 S02")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -309,11 +297,16 @@ def main() -> int:
         print(f"错误：找不到分镜清单 {spec_path}", file=sys.stderr)
         return 2
 
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    try:
+        spec = select_shots(json.loads(spec_path.read_text(encoding="utf-8")), args.shots)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
     errors, warnings = audit_episode(spec, root, pre_mode=args.pre)
 
-    mode_tag = "预检模式 (--pre)" if args.pre else "生产全量终审"
+    mode_tag = "预检模式 (--pre)" if args.pre else "开拍前检查"
     print(f"=== audit_shots v4.0 [{mode_tag}] : {spec_path.name} ===")
+    if args.shots:
+        print(f"镜头范围：{', '.join(shot['id'] for shot in spec['shots'])}")
 
     if warnings:
         print(f"\n[WARNINGS: {len(warnings)}]")

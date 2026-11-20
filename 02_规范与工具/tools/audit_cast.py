@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-窗口② 资产设定卡提交前自动化红线预检工具（对齐 PIPELINE_SPEC v3 §4.1–§4.5）
+资产设定卡提交前检查。
 在把任何 cast/<角色|场景|道具>.md 写入通用画布节点前执行，任一项违例即返回退出码 1 阻断。
 
 用法：
@@ -14,23 +14,19 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-ASSET_STYLE_FALLBACK = "国漫3D（CG）写实高精度风格，电影级光影质感，顶级3D动漫电影渲染级别，人物解剖结构严谨自然，真实皮肤毛孔与织物纤维质感。"
-FILM_STYLE_FALLBACK = "国漫3D（CG）写实高精度风格，电影级光影质感，顶级3D动漫电影渲染级别，真实物理材质与自然微瑕疵纹理，强明暗情绪反差，浅景深与空气介质微尘感。"
 
 
-def load_style_line(label: str, fallback: str) -> str:
-    """风格句只读 README。还是 <<填入>> 占位时，用母版默认句。"""
+def load_style_line(label: str) -> str | None:
+    """读取已经登记的风格句。"""
     readme = ROOT / "README.md"
     if not readme.exists():
-        return fallback
+        return None
     text = readme.read_text(encoding="utf-8")
-    match = re.search(rf"{re.escape(label)}[\s\S]{{0,500}}?^\s*>\s*(.+)$", text, flags=re.M)
+    match = re.search(rf"^### {re.escape(label)}[ \t]*\n(?:[ \t]*\n)*>[ \t]*(.+)$", text, flags=re.M)
     if not match:
-        return fallback
+        return None
     line = match.group(1).strip().strip("`")
-    if "<<" in line or ">>" in line or "填入" in line or len(line) < 8:
-        return fallback
-    return line
+    return line if line and "<<" not in line and ">>" not in line else None
 
 
 def is_blocking_prompt(*parts: str) -> bool:
@@ -78,9 +74,11 @@ def audit_one(md_path: Path, explicit_kind: str | None = None) -> list[str]:
     issues: list[str] = []
     text = md_path.read_text(encoding="utf-8")
     kind = detect_kind(text, explicit_kind)
-    asset_style = load_style_line("资产风格句", ASSET_STYLE_FALLBACK)
-    film_style = load_style_line("全片风格句", FILM_STYLE_FALLBACK)
+    style_label = "资产风格句" if kind == "character" else "全片风格句"
+    approved_style = load_style_line(style_label)
     sections = parse_sections(text)
+    setup = next((body for heading, body in sections if heading == "设定"), "")
+    is_portrait = re.search(r"参考版式[：:]\s*定妆照\b", setup) is not None
 
     submit_sections = [(h, b) for h, b in sections if h != "设定"]
     if not submit_sections:
@@ -98,19 +96,14 @@ def audit_one(md_path: Path, explicit_kind: str | None = None) -> list[str]:
         # 1. 首句风格句校验（白模站位图、720 全景是两种例外）
         first_line = non_empty_lines[0]
         blocking = is_blocking_prompt(heading, body)
-        if kind == "character":
-            if first_line != asset_style:
-                issues.append(f"[{tag}] §4.1：首句必须逐字使用 README.md 的「资产风格句」")
-            if body.count(asset_style) > 1:
-                issues.append(f"[{tag}] §4.1：资产风格句只能写一次，当前重复出现")
-        elif kind == "scene" and not blocking and heading != "全景720":
-            if first_line != film_style:
-                issues.append(f"[{tag}] §4.3：场景首句必须逐字使用 README.md 的「全片风格句」")
-            elif body.count(film_style) > 1:
-                issues.append(f"[{tag}] §4.3：全片风格句只能写一次")
-        elif kind == "prop_or_creature" and not blocking:
-            if first_line != film_style:
-                issues.append(f"[{tag}] 道具/生物首句必须逐字使用 README.md 的「全片风格句」")
+        uses_style = kind == "character" or (not blocking and not (kind == "scene" and heading == "全景720"))
+        if uses_style:
+            if approved_style is None:
+                issues.append(f"[{tag}] 请先在 README.md 登记已确认的「{style_label}」")
+            elif first_line != approved_style:
+                issues.append(f"[{tag}] 首句必须逐字使用 README.md 的「{style_label}」")
+            elif body.count(approved_style) > 1:
+                issues.append(f"[{tag}] 「{style_label}」只能使用一次")
 
         # 2. 通用违禁词校验
         for pat, reason in COMMON_FORBIDDEN:
@@ -126,11 +119,12 @@ def audit_one(md_path: Path, explicit_kind: str | None = None) -> list[str]:
                     issues.append(
                         f"[{tag}] §4.1 纯人物空手铁律违例：基础三视图严禁出现手持/外挂道具词 {hit_props}（请移至派生变体）"
                     )
-                for req in ("三视图", "正面", "侧面", "背面"):
-                    if req not in body:
-                        issues.append(f"[{tag}] §4.1：基础三视图缺少必需版式要素「{req}」")
+                layout_terms = ("定妆照",) if is_portrait else ("三视图", "正面", "侧面", "背面")
+                for term in layout_terms:
+                    if term not in body:
+                        issues.append(f"[{tag}] 基础角色卡缺少版式要素「{term}」")
                 if re.search(r"\{\{[^}]+\}\}", body):
-                    issues.append(f"[{tag}] §4.1：基础三视图（t2i）不应包含 {{{{别名}}}} 引用")
+                    issues.append(f"[{tag}] 基础角色卡不应包含 {{{{别名}}}} 引用")
             else:
                 # §4.2 派生形态/变体锁脸前缀校验
                 expected_ref = f"{{{{{char_name}}}}}"
@@ -143,7 +137,7 @@ def audit_one(md_path: Path, explicit_kind: str | None = None) -> list[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="窗口② 资产卡提交前自动化红线审计（PIPELINE_SPEC v3 §4）")
+    parser = argparse.ArgumentParser(description="资产设定卡提交前检查")
     parser.add_argument("target", help="单个 .md 文件路径或 cast/ 目录路径")
     parser.add_argument("--kind", choices=["character", "scene", "prop_or_creature"], default=None, help="手动指定资产类型")
     parser.add_argument("--only-characters", action="store_true", help="扫描目录时仅审计角色设定卡")
@@ -173,7 +167,7 @@ def main():
             print(f"  {idx}. {item}")
         sys.exit(1)
 
-    print(f"[资产预检通过] 共 {checked} 个设定文件 100% 通过 PIPELINE_SPEC v3 §4 资产红线审计！")
+    print(f"[资产预检通过] 共 {checked} 个设定文件通过。")
     sys.exit(0)
 
 
