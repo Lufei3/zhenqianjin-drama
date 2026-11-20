@@ -1,0 +1,74 @@
+{
+  "scope": "cast",
+  "lock_version": 2,
+  "locked_at": "2026-11-20T09:56:36",
+  "reason": "锁定全部基准与默认别名资产",
+  "asset_count": 13,
+  "assets": {
+    "墨竹发簪.png": {
+      "sha256": "6adac8bc6a3f0adf026a6d9444193d385716471274e9047e000f677f1cd04095",
+      "size_bytes": 3343336,
+      "mtime_iso": "2026-11-20T09:29:55"
+    },
+    "墨竹发簪.默认.png": {
+      "sha256": "6adac8bc6a3f0adf026a6d9444193d385716471274e9047e000f677f1cd04095",
+      "size_bytes": 3343336,
+      "mtime_iso": "2026-11-20T09:29:55"
+    },
+    "戚月.png": {
+      "sha256": "68835d945305ab2726966ea2295c15f7b0b94f96d95d54b92c25825461dcee3a",
+      "size_bytes": 4572415,
+      "mtime_iso": "2026-11-20T09:24:26"
+    },
+    "戚月.默认.png": {
+      "sha256": "68835d945305ab2726966ea2295c15f7b0b94f96d95d54b92c25825461dcee3a",
+      "size_bytes": 4572415,
+      "mtime_iso": "2026-11-20T09:24:26"
+    },
+    "戚月_冷笑讥讽微表情.png": {
+      "sha256": "f76cbbcb7b9e897f2700fe7a10f200d688e27afe4022222245a5e074fbc35440",
+      "size_bytes": 4583371,
+      "mtime_iso": "2026-11-20T09:33:20"
+    },
+    "正厅.png": {
+      "sha256": "2af54278913ac8f65d2723dd78175dd98de1db04bb6e00120156334d2124ab96",
+      "size_bytes": 4591999,
+      "mtime_iso": "2026-11-20T09:28:00"
+    },
+    "正厅.默认.png": {
+      "sha256": "2af54278913ac8f65d2723dd78175dd98de1db04bb6e00120156334d2124ab96",
+      "size_bytes": 4591999,
+      "mtime_iso": "2026-11-20T09:28:00"
+    },
+    "正厅_微缩模型.png": {
+      "sha256": "ced0c8fbb792900ca0d630cd84229fdee8138c17aac94352066cd8c6d1f7cafc",
+      "size_bytes": 4225490,
+      "mtime_iso": "2026-11-20T09:33:49"
+    },
+    "紫檀佛珠.png": {
+      "sha256": "01fd0ccee98468d66050f1d2bc670b8c224d42968ea35388f5cdffd5619e32c6",
+      "size_bytes": 3969239,
+      "mtime_iso": "2026-11-20T09:28:15"
+    },
+    "紫檀佛珠.默认.png": {
+      "sha256": "01fd0ccee98468d66050f1d2bc670b8c224d42968ea35388f5cdffd5619e32c6",
+      "size_bytes": 3969239,
+      "mtime_iso": "2026-11-20T09:28:15"
+    },
+    "老夫人.png": {
+      "sha256": "e7f30fbda4804887048379d8b3f63e3930511e185046bb179e9312935a8343d8",
+      "size_bytes": 5306061,
+      "mtime_iso": "2026-11-20T09:27:45"
+    },
+    "老夫人.默认.png": {
+      "sha256": "e7f30fbda4804887048379d8b3f63e3930511e185046bb179e9312935a8343d8",
+      "size_bytes": 5306061,
+      "mtime_iso": "2026-11-20T09:27:45"
+    },
+    "老夫人_听心声震骇微表情.png": {
+      "sha256": "5072cb92bf9918f4be0bea066a715f6dd9cc77fb739e88d97c1bb73e3b5c7d3a",
+      "size_bytes": 5139725,
+      "mtime_iso": "2026-11-20T09:35:30"
+    }
+  }
+}

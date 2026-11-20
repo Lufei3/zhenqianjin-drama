@@ -2,194 +2,20 @@
   "episode": "E01",
   "title": "真千金归府心声暴击",
   "summary": {
-    "characters": 2,
-    "scenes": 1,
-    "props": 2,
-    "frames": 3,
+    "characters": 0,
+    "scenes": 0,
+    "props": 0,
+    "frames": 0,
     "sketches": 0,
-    "audio_vo": 1
+    "audio_vo": 0
   },
-  "total_pending": 9,
+  "total_pending": 0,
   "todo": {
-    "characters": [
-      {
-        "path": "cast/老夫人.默认.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S02"
-        ],
-        "required_for_video": false,
-        "usages": [
-          {
-            "shot_id": "S02",
-            "kind": "characters",
-            "character": "老夫人",
-            "state": "默认"
-          }
-        ],
-        "character": "老夫人",
-        "state": "默认"
-      },
-      {
-        "path": "cast/戚月.默认.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S03"
-        ],
-        "required_for_video": false,
-        "usages": [
-          {
-            "shot_id": "S03",
-            "kind": "characters",
-            "character": "戚月",
-            "state": "默认"
-          }
-        ],
-        "character": "戚月",
-        "state": "默认"
-      }
-    ],
-    "scenes": [
-      {
-        "path": "cast/正厅.默认.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S01",
-          "S02",
-          "S03"
-        ],
-        "required_for_video": false,
-        "usages": [
-          {
-            "shot_id": "S01",
-            "kind": "scenes",
-            "scene": "正厅",
-            "angle": "空场全景"
-          },
-          {
-            "shot_id": "S02",
-            "kind": "scenes",
-            "scene": "正厅",
-            "angle": "正打中景"
-          },
-          {
-            "shot_id": "S03",
-            "kind": "scenes",
-            "scene": "正厅",
-            "angle": "反打中景"
-          }
-        ],
-        "scene": "正厅",
-        "angle": "空场全景"
-      }
-    ],
-    "props": [
-      {
-        "path": "cast/紫檀佛珠.默认.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S02"
-        ],
-        "required_for_video": false,
-        "usages": [
-          {
-            "shot_id": "S02",
-            "kind": "props"
-          }
-        ]
-      },
-      {
-        "path": "cast/墨竹发簪.默认.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S03"
-        ],
-        "required_for_video": false,
-        "usages": [
-          {
-            "shot_id": "S03",
-            "kind": "props"
-          }
-        ]
-      }
-    ],
-    "frames": [
-      {
-        "path": "cast/frames/E01_S01_first.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S01"
-        ],
-        "required_for_video": true,
-        "usages": [
-          {
-            "shot_id": "S01",
-            "kind": "frames",
-            "frame_role": "first",
-            "scene": "正厅"
-          }
-        ],
-        "frame_role": "first",
-        "scene": "正厅"
-      },
-      {
-        "path": "cast/frames/E01_S02_first.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S02"
-        ],
-        "required_for_video": true,
-        "usages": [
-          {
-            "shot_id": "S02",
-            "kind": "frames",
-            "frame_role": "first",
-            "scene": "正厅"
-          }
-        ],
-        "frame_role": "first",
-        "scene": "正厅"
-      },
-      {
-        "path": "cast/frames/E01_S03_first.png",
-        "status": "missing",
-        "used_in_shots": [
-          "S03"
-        ],
-        "required_for_video": true,
-        "usages": [
-          {
-            "shot_id": "S03",
-            "kind": "frames",
-            "frame_role": "first",
-            "scene": "正厅"
-          }
-        ],
-        "frame_role": "first",
-        "scene": "正厅"
-      }
-    ],
+    "characters": [],
+    "scenes": [],
+    "props": [],
+    "frames": [],
     "sketches": [],
-    "audio_vo": [
-      {
-        "path": "audio/E01_S02_老夫人.wav",
-        "status": "missing",
-        "used_in_shots": [
-          "S02"
-        ],
-        "required_for_video": false,
-        "usages": [
-          {
-            "shot_id": "S02",
-            "kind": "audio_vo",
-            "speaker": "",
-            "dialogue": "你就是戚月？"
-          }
-        ],
-        "speaker": "",
-        "shot_id": "S02",
-        "dialogue": "你就是戚月？"
-      }
-    ]
+    "audio_vo": []
   }
 }

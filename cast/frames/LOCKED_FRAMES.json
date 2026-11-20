@@ -1,0 +1,24 @@
+{
+  "scope": "frames",
+  "lock_version": 1,
+  "locked_at": "2026-11-20T09:49:42",
+  "reason": "E01样片S01-S03接力帧就绪",
+  "asset_count": 3,
+  "assets": {
+    "E01_S01_first.png": {
+      "sha256": "7c4540811e2ee1bf9f1859c3decd974f3c6f005a37ceff5ccb59af18d7fb43ff",
+      "size_bytes": 4597110,
+      "mtime_iso": "2026-11-20T09:49:01"
+    },
+    "E01_S02_first.png": {
+      "sha256": "8eb599ec043b05483486e7411a6167a75ac7545f7017744f86ece08d545fe3b0",
+      "size_bytes": 5236004,
+      "mtime_iso": "2026-11-20T09:49:01"
+    },
+    "E01_S03_first.png": {
+      "sha256": "5a934e022b23bf5d3292795410f09c34ff471120c90739d835ca53f8a11f9aae",
+      "size_bytes": 4486761,
+      "mtime_iso": "2026-11-20T09:49:01"
+    }
+  }
+}
