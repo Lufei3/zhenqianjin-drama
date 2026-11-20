@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "episode": "E01",
+  "title": "示例剧集标题",
+  "target_platform": "douyin_hongguo",
+  "shots": [
+    {
+      "id": "S01",
+      "dur": 4.0,
+      "cadence": "Inhale",
+      "scene": "工坊",
+      "camera_angle": "默认",
+      "mode": "A",
+      "audio_mode": "native",
+      "audio_file": null,
+      "dialogue": "零件全被动过了。",
+      "dialogue_chars": 7,
+      "characters": [
+        {
+          "name": "角色A",
+          "presence": "on_screen",
+          "state": "默认"
+        },
+        {
+          "name": "角色B",
+          "presence": "on_screen",
+          "state": "默认"
+        }
+      ],
+      "refs": {
+        "first_frame": "cast/frames/E01_S01_first.png",
+        "last_frame": null,
+        "sketch": null,
+        "mode_b_refs": []
+      },
+      "handoff_note": "角色A站直于桌前，右手仍按在桌沿。",
+      "video_prompt": "中景双人过肩，前半段固定机位，后半段平滑缓推。暖黄吊灯对冲窗外冷蓝暴雨，光柱微尘浮动。\n0.0–1.8s：右侧近景角色B肩背随呼吸微伏，指尖轻叩桌沿；左侧中景角色A双手撑桌微前倾蓄力，指节发白，视线死锁桌面零件。<零件轻碰声与窗外闷雷>\n1.8–4.0s：角色A腰腹爆发霍然站直，衣摆前甩两下自然回落，下颌微收，低沉开口：「零件全被动过了。」<木桌受力轻响>\n仅保留人声与环境动作音效，无字幕。"
+    },
+    {
+      "id": "S02",
+      "dur": 3.0,
+      "cadence": "Exhale",
+      "scene": "工坊",
+      "camera_angle": "机位_大门",
+      "mode": "A+",
+      "audio_mode": "sfx_only",
+      "audio_file": null,
+      "dialogue": "",
+      "dialogue_chars": 0,
+      "characters": [
+        {
+          "name": "角色A",
+          "presence": "on_screen",
+          "state": "默认"
+        }
+      ],
+      "refs": {
+        "first_frame": "cast/frames/E01_S02_first.png",
+        "last_frame": "cast/frames/E01_S02_last.png",
+        "sketch": null,
+        "mode_b_refs": []
+      },
+      "handoff_note": "角色A已绕至大门左侧，右手握紧门栓。",
+      "video_prompt": "中景平滑向右120度弧形环绕运镜，一气呵成。室内冷暖光影随视点流动，窗外雨丝斜飞。\n0.0–3.0s：角色A右脚蹬地转身，疾步绕过旧木工作台冲向铁门，深色冲锋衣下摆因急步向后翻卷，末尾单手扣死铁门插销骤然刹停，衣摆惯性前荡后落定。<急促脚步声与铁栓咔哒撞击声>\n全程无对话，仅环境与动作音效，无字幕。"
+    },
+    {
+      "id": "S03",
+      "dur": 4.0,
+      "cadence": "Hold",
+      "scene": "工坊",
+      "camera_angle": "机位_特写",
+      "mode": "A",
+      "audio_mode": "vo_lipsync",
+      "audio_file": "audio/E01_S03.wav",
+      "dialogue": "你以为，我真没查过这笔账？",
+      "dialogue_chars": 12,
+      "characters": [
+        {
+          "name": "角色A",
+          "presence": "on_screen",
+          "state": "默认"
+        }
+      ],
+      "refs": {
+        "first_frame": "cast/frames/E01_S03_first.png",
+        "last_frame": null,
+        "sketch": null,
+        "mode_b_refs": []
+      },
+      "handoff_note": "角色A眼神死锁对方，下颌紧绷。",
+      "video_prompt": "人物近景特写，固定机位。暖黄侧逆光勾勒轮廓，背景微尘缓慢漂浮。\n0.0–4.0s：角色A眼神死锁画外右侧，前1秒微微吸气、下颌咬肌绷紧，随后极缓慢偏头半寸，眉峰微压，保持自然呼吸与微弱点头节奏，神情冷峻克制。\n全程闭口无对话，仅极弱室内环境底噪，无字幕。"
+    }
+  ]
+}
