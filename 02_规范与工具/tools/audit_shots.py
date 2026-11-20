@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-audit_shots.py (PIPELINE_SPEC v4.0)
-瘦身版自动化门禁校验工具（10 条硬红线 Error + 5 条软提醒 Warning）
+检查分镜数据、视频挂载和外配音频的开拍条件。
 
 用法：
-  # 阶段 1.5 预检（跳过磁盘文件与哈希锁校验）
+  # 分镜预检（跳过磁盘文件与哈希锁校验）
   python audit_shots.py shots/E01_spec.json --pre
 
-  # 阶段 3 开拍前全量终审（启用磁盘、音频时长与 SHA-256 哈希锁校验）
+  # 开拍前检查实际文件、音频时长与 SHA-256 锁版
   python audit_shots.py shots/E01_spec.json --root .
 """
 
@@ -15,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import re
 import sys
 import wave
@@ -23,9 +21,8 @@ from pathlib import Path
 from typing import Any
 
 from asset_lock import load_lock_map, sha256_file
-from episode_spec import select_shots
+from episode_spec import select_shots, shot_durations, shot_refs, shots_with_ids, video_model
 
-# 硬红线词库
 FORBIDDEN_REF_TOKENS = ("blocking/", "sketch/", "storyboard/", ".director.")
 PLACEHOLDER_RE = re.compile(r"\{\{[^}]+\}\}|<<[^>]+>>|\bTBD\b", re.IGNORECASE)
 DYEING_AND_BGM_WORDS = (
@@ -50,7 +47,6 @@ ALIAS_RE = re.compile(r"@[\u4e00-\u9fa5A-Za-z0-9_]+")
 # 软提醒词库与正则
 PINK_ELEPHANT_WORDS = ("不要", "避免", "留在参考图里", "调色漂移", "塑料")
 BEAT_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[–\-~]\s*(\d+(?:\.\d+)?)\s*(?:s|秒)")
-NATIVE_DURATIONS = {2.0, 2.5, 3.0, 4.0, 5.0}
 MAX_PROMPT_CHARS = 240
 
 
@@ -78,45 +74,69 @@ def net_char_count(text: str) -> int:
     return len(re.sub(r"\s+", "", text))
 
 
-def dialogue_net_chars(dialogue: str) -> tuple[int, int]:
-    """返回 (有效汉字/字母数字字数, 停顿标点数)。"""
-    pause_count = len(re.findall(r"[，,、；;……]", dialogue))
-    clean = re.sub(r"[\s，,。\.！!？?、；;：“”\"「」…\-—]", "", dialogue)
-    return len(clean), pause_count
+def without_ordered_dialogue(prompt: str, dialogue: str) -> str | None:
+    """核对原句出场顺序，返回除去原句的描述。"""
+    compact_prompt = re.sub(r"\s+", "", prompt)
+    unmatched = []
+    offset = 0
+    for raw_line in dialogue.splitlines():
+        line = re.sub(r"\s+", "", raw_line)
+        if not line:
+            continue
+        start = compact_prompt.find(line, offset)
+        if start == -1:
+            return None
+        unmatched.append(compact_prompt[offset:start])
+        offset = start + len(line)
+    unmatched.append(compact_prompt[offset:])
+    return " ".join(unmatched)
 
 
 def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
-    lock_map = {} if pre_mode else load_lock_map(root)
+
+    try:
+        shots = shots_with_ids(spec)
+        model = video_model(spec)
+    except ValueError as error:
+        return [f"[GLOBAL] {error}"], warnings
+
+    if PLACEHOLDER_RE.search(model):
+        errors.append("[GLOBAL] video_model 尚未填写实际模型名")
 
     aspect_ratio = spec.get("aspect_ratio", "16:9")
     if aspect_ratio not in ("16:9", "9:16"):
         errors.append(f"[GLOBAL] aspect_ratio 必须为 16:9 或 9:16（当前为 {aspect_ratio!r}）")
 
-    shots = spec.get("shots") or []
-    if not shots:
-        errors.append("[GLOBAL] shots 列表为空")
-        return errors, warnings
-
-    mode_b_count = 0
-    dur_streak = 0
-    last_dur: float | None = None
+    lock_map = {} if pre_mode else load_lock_map(root)
 
     for shot in shots:
-        sid = shot.get("id", "UNKNOWN")
-        dur = float(shot.get("dur") or 0)
+        sid = shot["id"]
+        try:
+            dur, cut_duration = shot_durations(shot)
+            refs = shot_refs(shot)
+        except ValueError as error:
+            errors.append(f"[{sid}] {error}")
+            continue
+
         mode = str(shot.get("mode", "A")).upper()
         audio_mode = str(shot.get("audio_mode", "sfx_only")).lower()
-        prompt = shot.get("video_prompt") or ""
-        dialogue = (shot.get("dialogue") or "").strip()
-        refs = shot.get("refs") or {}
+        prompt = shot.get("video_prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            errors.append(f"[{sid}] E1 video_prompt 必须填写实际生成指令")
+            continue
+        dialogue = shot.get("dialogue")
+        if dialogue is not None and not isinstance(dialogue, str):
+            errors.append(f"[{sid}] E5 dialogue 必须是字符串")
+            continue
+        dialogue = (dialogue or "").strip()
+        style_text = without_ordered_dialogue(prompt, dialogue) if audio_mode == "native" else prompt
 
-        # --- E1: Prompt 净字数上限 (≤240) ---
         char_len = net_char_count(prompt)
         if char_len > MAX_PROMPT_CHARS:
-            errors.append(
-                f"[{sid}] E1 Prompt 过长：{char_len} 字（硬上限 {MAX_PROMPT_CHARS} 字，防注意力稀释）"
+            warnings.append(
+                f"[{sid}] Prompt 为 {char_len} 字，超过仓库建议的 {MAX_PROMPT_CHARS} 字，请按实际入口限制精简"
             )
 
         # 收集实际挂载给视频模型的路径
@@ -131,23 +151,27 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
             if refs.get("last_frame"):
                 video_ref_paths.append(refs["last_frame"])
         elif mode == "B":
-            mode_b_count += 1
             for item in refs.get("mode_b_refs") or []:
                 if isinstance(item, dict):
-                    if item.get("path"):
-                        video_ref_paths.append(item["path"])
+                    video_ref_paths.append(item["path"])
                     if item.get("alias"):
-                        alias = item["alias"]
-                        mode_b_aliases.add(alias if alias.startswith("@") else f"@{alias}")
-                elif isinstance(item, str):
+                        alias = item["alias"] if item["alias"].startswith("@") else f"@{item['alias']}"
+                        if not ALIAS_RE.fullmatch(alias) or alias in mode_b_aliases:
+                            errors.append(f"[{sid}] E4 Mode B 的挂载别名无效或重复：{alias}")
+                        mode_b_aliases.add(alias)
+                else:
                     video_ref_paths.append(item)
 
         # --- E2: 禁止向视频模型投喂白模与草图 ---
-        for p in video_ref_paths:
-            norm_p = p.replace("\\", "/")
+        video_ref_paths = [Path(path.replace("\\", "/")).as_posix() for path in video_ref_paths]
+        if mode == "B" and len(set(video_ref_paths)) != len(video_ref_paths):
+            errors.append(f"[{sid}] E4 Mode B 的参考图路径不能重复")
+        for norm_p in video_ref_paths:
             for bad in FORBIDDEN_REF_TOKENS:
-                if bad in norm_p:
+                if bad in norm_p.lower():
                     errors.append(f"[{sid}] E2 禁止挂载非视频资产路径：{norm_p}（命中 {bad}）")
+            if PLACEHOLDER_RE.search(norm_p):
+                errors.append(f"[{sid}] E3 挂载路径包含占位符：{norm_p}")
 
         # --- E3: 未解析占位符清零 ---
         ph_match = PLACEHOLDER_RE.search(prompt)
@@ -167,9 +191,8 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
             if prompt_aliases:
                 errors.append(f"[{sid}] E4 Mode A+ 正文严禁出现 @别名：{sorted(prompt_aliases)}")
         elif mode == "B":
-            mb = refs.get("mode_b_refs") or []
-            if len(mb) == 0 or len(mb) > 3:
-                errors.append(f"[{sid}] E4 Mode B 挂载参考图数量必须为 1–3 张（当前 {len(mb)} 张）")
+            if not video_ref_paths:
+                errors.append(f"[{sid}] E4 Mode B 至少需要 1 张参考图，数量上限以生成入口为准")
             if refs.get("first_frame") or refs.get("last_frame"):
                 errors.append(f"[{sid}] E4 Mode B 不可与 first_frame/last_frame 混用")
             missing_in_refs = prompt_aliases - mode_b_aliases
@@ -178,27 +201,25 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
         else:
             errors.append(f"[{sid}] E4 未知生成模式：{mode}（仅支持 A / A+ / B）")
 
-        # --- E5: native 模式台词字数公式校验 ---
+        # --- E5: 台词与音频路线一致 ---
         if audio_mode not in {"native", "sfx_only", "vo_lipsync"}:
             errors.append(f"[{sid}] E5 未知音频模式：{audio_mode}（仅支持 native / sfx_only / vo_lipsync）")
-        elif audio_mode == "native":
-            if not dialogue:
-                warnings.append(f"[{sid}] native 模式未填写 dialogue 字段")
-            else:
-                d_chars, pauses = dialogue_net_chars(dialogue)
-                max_limit = max(0, math.floor((dur - 0.8) * 5.0 - 1.5 * pauses))
-                if d_chars > max_limit:
-                    errors.append(
-                        f"[{sid}] E5 台词字数越界：{d_chars} 字（含 {pauses} 处停顿），{dur}s 镜头极限上限 {max_limit} 字"
-                    )
+        elif audio_mode in {"native", "vo_lipsync"} and not dialogue:
+            errors.append(f"[{sid}] E5 {audio_mode} 模式需填写原台词 dialogue")
+        elif audio_mode == "native" and style_text is None:
+            errors.append(f"[{sid}] E5 native 模式的提示词须按顺序包含 dialogue 原句")
         elif audio_mode == "sfx_only" and dialogue:
             errors.append(f"[{sid}] E5 sfx_only 模式不可填写台词：{dialogue}")
+        if PLACEHOLDER_RE.search(dialogue):
+            errors.append(f"[{sid}] E3 dialogue 包含未解析占位符")
 
         # --- E6: vo_lipsync 音频先行校验 ---
         if audio_mode == "vo_lipsync":
             audio_file = shot.get("audio_file")
             if not isinstance(audio_file, str) or Path(audio_file).suffix.lower() != ".wav":
                 errors.append(f"[{sid}] E6 vo_lipsync 模式必须指定 WAV 格式的 audio_file")
+            elif PLACEHOLDER_RE.search(audio_file):
+                errors.append(f"[{sid}] E6 audio_file 包含未解析占位符")
             elif not pre_mode:
                 af_path = root / audio_file.replace("\\", "/")
                 if not af_path.is_file():
@@ -207,23 +228,24 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
                     wav_dur = get_wav_duration(af_path)
                     if wav_dur is None:
                         errors.append(f"[{sid}] E6 前置配音不是可读取的非空 WAV 文件：{audio_file}")
-                    elif dur < wav_dur + 0.5:
-                        errors.append(
-                            f"[{sid}] E6 视频时长 {dur}s 短于配音 {wav_dur:.2f}s + 0.5s 气口要求"
-                        )
+                    else:
+                        if dur < wav_dur + 0.5:
+                            errors.append(f"[{sid}] E6 生成时长 {dur}s 短于配音 {wav_dur:.2f}s + 0.5s 气口要求")
+                        if "cut_duration" in shot and cut_duration < wav_dur:
+                            warnings.append(f"[{sid}] 剪辑时长 {cut_duration}s 短于配音 {wav_dur:.2f}s，请核对跨镜对白和实际入点")
             if QUOTED_DIALOGUE_RE.search(prompt):
                 errors.append(f"[{sid}] E6 vo_lipsync 模式的 video_prompt 严禁包含引号台词（应保持闭口表演）")
 
-        # --- E7: 字面染色与 BGM 红线 ---
-        lower_prompt = prompt.lower()
+        # 风格提醒只检查生成描述，保留原台词措辞。
+        style_text = prompt if style_text is None else style_text
+        lower_prompt = style_text.lower()
         for w in DYEING_AND_BGM_WORDS:
             if w.lower() in lower_prompt:
-                errors.append(f"[{sid}] E7 命中字面染色或 BGM 红线词：「{w}」")
+                warnings.append(f"[{sid}] 提示词含「{w}」，请核对是否需要生成对应颜色、情绪或音乐")
 
-        # --- E8: 绝对视线红线 ---
         for w in GAZE_REDLINE_WORDS:
-            if w in prompt:
-                errors.append(f"[{sid}] E8 命中视线红线词：「{w}」")
+            if w in style_text:
+                warnings.append(f"[{sid}] 提示词含「{w}」，请核对画内视线目标")
 
         # --- E9: 无字幕声明 ---
         if "无字幕" not in prompt and "不要生成旁白字幕" not in prompt:
@@ -231,8 +253,7 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
 
         # --- E10: 哈希锁版校验（生产模式） ---
         if not pre_mode:
-            for p in video_ref_paths:
-                norm_p = Path(p.replace("\\", "/")).as_posix()
+            for norm_p in dict.fromkeys(video_ref_paths):
                 full_p = root / norm_p
                 if not full_p.is_file():
                     errors.append(f"[{sid}] E10 挂载资产不存在：{norm_p}")
@@ -247,41 +268,18 @@ def audit_episode(spec: dict[str, Any], root: Path, pre_mode: bool) -> tuple[lis
 
         # --- W1: 粉红大象词预警 ---
         for w in PINK_ELEPHANT_WORDS:
-            if w in prompt:
-                warnings.append(f"[{sid}] W1 含粉红大象/防御词「{w}」，建议改写为纯正向视觉描述")
+            if w in style_text:
+                warnings.append(f"[{sid}] 提示词含「{w}」，可检查是否能直接写出所需画面")
 
-        # --- W2: 拍子时间总和偏差 ---
-        beats = BEAT_RANGE_RE.findall(prompt)
-        if beats:
-            max_end = max(float(end) for _, end in beats)
-            if abs(max_end - dur) > 0.15:
-                warnings.append(f"[{sid}] W2 拍子结束时间 {max_end}s 与镜头时长 {dur}s 不一致")
-
-        # --- W3: 连续 4 镜同长预警 ---
-        if last_dur is not None and abs(dur - last_dur) < 1e-6:
-            dur_streak += 1
-            if dur_streak >= 4:
-                warnings.append(f"[{sid}] W3 已连续 {dur_streak} 镜为 {dur}s，建议调整呼吸节拍")
-        else:
-            dur_streak = 1
-            last_dur = dur
-
-        # --- W4: 非原生甜点档位预警 ---
-        if dur not in NATIVE_DURATIONS:
-            warnings.append(f"[{sid}] W4 时长 {dur}s 非推荐模型甜点档 {sorted(NATIVE_DURATIONS)}")
-
-    # --- W5: Mode B 占比过高预警 ---
-    if len(shots) >= 4 and (mode_b_count / len(shots)) > 0.20:
-        pct = (mode_b_count / len(shots)) * 100
-        warnings.append(
-            f"[GLOBAL] W5 Mode B 占比达 {pct:.1f}%（>{20}%），建议尽量转为 Mode A 写实首帧以控成本与稳画质"
-        )
+        for start, end in BEAT_RANGE_RE.findall(style_text):
+            if float(start) >= float(end) or float(end) > dur:
+                errors.append(f"[{sid}] 提示词时间段 {start}–{end}s 超出生成范围或顺序无效（生成时长 {dur}s）")
 
     return errors, warnings
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="PIPELINE_SPEC v4.0 自动化门禁校验工具")
+    parser = argparse.ArgumentParser(description="分镜数据、挂载和前置配音检查")
     parser.add_argument("spec", help="分镜单源清单路径，如 shots/E01_spec.json")
     parser.add_argument("--root", default=".", help="项目根目录（默认当前目录）")
     parser.add_argument("--pre", action="store_true", help="预检模式：跳过磁盘资产与哈希锁校验")
@@ -304,7 +302,7 @@ def main() -> int:
     errors, warnings = audit_episode(spec, root, pre_mode=args.pre)
 
     mode_tag = "预检模式 (--pre)" if args.pre else "开拍前检查"
-    print(f"=== audit_shots v4.0 [{mode_tag}] : {spec_path.name} ===")
+    print(f"=== audit_shots [{mode_tag}] : {spec_path.name} ===")
     if args.shots:
         print(f"镜头范围：{', '.join(shot['id'] for shot in spec['shots'])}")
 

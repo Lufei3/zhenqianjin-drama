@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-build_episode.py (PIPELINE_SPEC v4.0)
 单源事实（SSOT）派生与增量资产派单工具
 
 功能：
 1. 读取唯一事实源 shots/<EP>_spec.json
 2. 自动派生：
    - shots/<EP>_master.md      （人类可读总控表）
-   - shots/<EP>_prompts.md     （Seedance 2.5 纯净复制粘贴版提示词）
+   - shots/<EP>_prompts.md     （可复制的生成提示词）
    - shots/<EP>_assets_todo.json（自动比对 LOCKED*.json 与磁盘后的纯增量缺口派单表）
 
 用法：
@@ -24,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from asset_lock import load_lock_map, sha256_file
-from episode_spec import select_shots
+from episode_spec import select_shots, shot_durations, shot_refs, video_model
 
 
 def check_asset_status(root: Path, rel_path: str, lock_map: dict[str, str]) -> str:
@@ -50,7 +49,7 @@ def format_presence(presence: str) -> str:
 
 
 def collect_refs_summary(shot: dict[str, Any]) -> str:
-    refs = shot.get("refs") or {}
+    refs = shot_refs(shot)
     mode = str(shot.get("mode", "A")).upper()
     parts: list[str] = []
     if mode == "A":
@@ -65,8 +64,8 @@ def collect_refs_summary(shot: dict[str, Any]) -> str:
         for item in refs.get("mode_b_refs") or []:
             if isinstance(item, dict):
                 alias = item.get("alias", "")
-                path = item.get("path", "")
-                parts.append(f"`{alias}={path}`")
+                path = item["path"]
+                parts.append(f"`{alias}={path}`" if alias else f"`{path}`")
             elif isinstance(item, str):
                 parts.append(f"`{item}`")
     return " ".join(parts) if parts else "（未配置）"
@@ -75,7 +74,8 @@ def collect_refs_summary(shot: dict[str, Any]) -> str:
 def build_master_md(spec: dict[str, Any]) -> str:
     ep = spec.get("episode", "EXX")
     title = spec.get("title", "")
-    platform = spec.get("target_platform", "douyin_hongguo")
+    platform = spec.get("target_platform") or "未设置"
+    model = video_model(spec)
     shots = spec.get("shots", [])
     optional_fields = [
         (field, heading)
@@ -86,14 +86,14 @@ def build_master_md(spec: dict[str, Any]) -> str:
     lines = [
         f"# {ep} 分镜总控表 — {title}",
         "",
-        f"> **自动派生文件**：由 `shots/{ep}_spec.json` 通过 `build_episode.py` 自动生成，请勿手工修改。目标平台：`{platform}`。",
+        f"> **自动派生文件**：由 `shots/{ep}_spec.json` 生成。目标平台：`{platform}`。视频模型：`{model}`。",
         "",
-        "| Shot | Dur | Cadence | Scene / Angle | Characters | Mode | Audio Mode | Refs | Dialogue | Handoff |" + extra_headers,
-        "| :--- | ---: | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |" + " :--- |" * len(optional_fields),
+        "| Shot | 生成时长 | 剪辑时长 | Cadence | Scene / Angle | Characters | Mode | Audio Mode | Refs | Dialogue | Handoff |" + extra_headers,
+        "| :--- | ---: | ---: | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |" + " :--- |" * len(optional_fields),
     ]
     for shot in shots:
         sid = shot.get("id", "")
-        dur = shot.get("dur", 0)
+        dur, cut_duration = shot_durations(shot)
         cadence = shot.get("cadence", "")
         scene = shot.get("scene", "")
         angle = shot.get("camera_angle", "默认")
@@ -104,16 +104,17 @@ def build_master_md(spec: dict[str, Any]) -> str:
         mode = shot.get("mode", "A")
         audio_mode = shot.get("audio_mode", "sfx_only")
         refs_str = collect_refs_summary(shot)
-        dialogue = (shot.get("dialogue") or "—").replace("|", "\\|")
+        dialogue = shot.get("dialogue") or "—"
         if shot.get("speaker") and shot.get("dialogue"):
-            dialogue = f"{shot['speaker']}：{dialogue}".replace("\n", "<br>")
-        handoff = (shot.get("handoff_note") or "—").replace("|", "\\|")
+            dialogue = f"{shot['speaker']}：{dialogue}"
+        dialogue = dialogue.replace("|", "\\|").replace("\n", "<br>")
+        handoff = (shot.get("handoff_note") or "—").replace("|", "\\|").replace("\n", "<br>")
         optional_cells = [
             (shot.get(field) or "—").replace("|", "\\|").replace("\n", "<br>")
             for field, _ in optional_fields
         ]
         lines.append(
-            f"| **{sid}** | {dur}s | {cadence} | {scene} / {angle} | {chars} | {mode} | {audio_mode} | {refs_str} | {dialogue} | {handoff} |"
+            f"| **{sid}** | {dur:g}s | {cut_duration:g}s | {cadence} | {scene} / {angle} | {chars} | {mode} | {audio_mode} | {refs_str} | {dialogue} | {handoff} |"
             + "".join(f" {cell} |" for cell in optional_cells)
         )
     lines.append("")
@@ -124,18 +125,18 @@ def build_prompts_md(spec: dict[str, Any]) -> str:
     ep = spec.get("episode", "EXX")
     title = spec.get("title", "")
     aspect_ratio = spec.get("aspect_ratio", "16:9")
+    model = video_model(spec)
     lines = [
-        f"# {ep} Seedance 2.5 即粘分镜提示词集 — {title}",
+        f"# {ep} {model} 分镜提示词集 — {title}",
         "",
-        f"> **自动派生文件**：由 `shots/{ep}_spec.json` 生成。代码块内为纯净高信号提示词（≤240字），可直接全选粘贴。",
+        f"> **自动派生文件**：由 `shots/{ep}_spec.json` 生成。提交时使用代码块和对应的生成参数、挂载。",
         "",
     ]
     for shot in spec.get("shots", []):
         sid = shot.get("id", "")
-        dur = shot.get("dur", 0)
-        cadence = shot.get("cadence", "")
+        dur, cut_duration = shot_durations(shot)
         mode = str(shot.get("mode", "A")).upper()
-        audio_mode = shot.get("audio_mode", "sfx_only")
+        audio_mode = str(shot.get("audio_mode", "sfx_only")).lower()
         refs_str = collect_refs_summary(shot)
         handoff = shot.get("handoff_note") or "无"
         audio_file = shot.get("audio_file")
@@ -150,14 +151,15 @@ def build_prompts_md(spec: dict[str, Any]) -> str:
 
         lines.append(f"## {sid}")
         lines.append(
-            f"- **参数**：`Seedance 2.5` ｜ `{mode_label}` ｜ `{aspect_ratio}` ｜ `{dur}s` ｜ `Audio: {audio_mode}` ｜ `Cadence: {cadence}`"
+            f"- **生成参数**：`{model}` ｜ `{mode_label}` ｜ `{aspect_ratio}` ｜ `{dur:g}s`"
         )
-        mount_line = f"- **挂载**：{refs_str}"
+        lines.append(f"- **视频挂载**：{refs_str}")
+        lines.append(f"- **剪辑时长**：`{cut_duration:g}s` ｜ **声音路线**：`{audio_mode}`")
         if audio_mode == "vo_lipsync" and audio_file:
-            mount_line += f" ｜ `后期音频`=`{audio_file}`"
+            audio_line = f"- **后期配音（供对口型和混音）**：`{audio_file}`"
             if dialogue:
-                mount_line += f"（台词：“{dialogue}”）"
-        lines.append(mount_line)
+                audio_line += f"（台词：“{dialogue}”）"
+            lines.append(audio_line)
         lines.append(f"- **衔接（不贴入提示词）**：{handoff}")
         lines.append("")
         lines.append("```text")
@@ -171,7 +173,7 @@ def build_assets_todo(spec: dict[str, Any], root: Path) -> dict[str, Any]:
     lock_map = load_lock_map(root)
     ep = spec.get("episode", "EXX")
 
-    seen: set[tuple[str, str]] = set()
+    pending_by_path: dict[str, tuple[str, dict[str, Any]]] = {}
     todo: dict[str, list[dict[str, Any]]] = {
         "characters": [],
         "scenes": [],
@@ -183,7 +185,22 @@ def build_assets_todo(spec: dict[str, Any], root: Path) -> dict[str, Any]:
 
     def add_item(bucket: str, path: str, shot_id: str, meta: dict[str, Any]) -> None:
         norm = Path(path.replace("\\", "/")).as_posix()
-        if bucket == "sketches":
+        usage = {"shot_id": shot_id, "kind": bucket, **meta}
+        pending = pending_by_path.get(norm)
+        if pending:
+            old_bucket, entry = pending
+            if shot_id not in entry["used_in_shots"]:
+                entry["used_in_shots"].append(shot_id)
+            if usage not in entry["usages"]:
+                entry["usages"].append(usage)
+            if bucket == "frames" and old_bucket != "frames":
+                todo[old_bucket].remove(entry)
+                entry.update(meta, required_for_video=True)
+                todo[bucket].append(entry)
+                pending_by_path[norm] = (bucket, entry)
+            return
+
+        if bucket in {"sketches", "audio_vo"}:
             if (root / norm).is_file():
                 return
             status = "missing"
@@ -191,42 +208,37 @@ def build_assets_todo(spec: dict[str, Any], root: Path) -> dict[str, Any]:
             status = check_asset_status(root, norm, lock_map)
         if status == "locked_ok":
             return
-        key = (bucket, norm)
-        if key in seen:
-            # 仅追加引用镜号
-            for existing in todo[bucket]:
-                if existing["path"] == norm and shot_id not in existing["used_in_shots"]:
-                    existing["used_in_shots"].append(shot_id)
-            return
-        seen.add(key)
         entry = {
             "path": norm,
             "status": status,
             "used_in_shots": [shot_id],
             "required_for_video": bucket == "frames",
+            "usages": [usage],
             **meta,
         }
         todo[bucket].append(entry)
+        pending_by_path[norm] = (bucket, entry)
 
     for shot in spec.get("shots", []):
         sid = shot.get("id", "")
         scene = shot.get("scene")
         angle = shot.get("camera_angle") or "默认"
         mode = str(shot.get("mode", "A")).upper()
-        refs = shot.get("refs") or {}
+        refs = shot_refs(shot)
         scene_file = refs.get("scene_plate")
-        if not scene_file and scene:
+        if "scene_plate" not in refs and scene and mode in {"A", "A+"}:
             angle_suffix = "默认" if angle == "默认" else f"机位_{angle.removeprefix('机位_')}"
             scene_file = f"cast/{scene}.{angle_suffix}.png"
         if scene_file:
             add_item("scenes", scene_file, sid, {"scene": scene, "angle": angle})
 
-        for ch in shot.get("characters") or []:
-            if ch.get("presence") == "on_screen":
-                cname = ch.get("name", "")
-                cstate = ch.get("state") or "默认"
-                if cname:
-                    add_item("characters", f"cast/{cname}.{cstate}.png", sid, {"character": cname, "state": cstate})
+        if mode in {"A", "A+"}:
+            for ch in shot.get("characters") or []:
+                if ch.get("presence") == "on_screen":
+                    cname = ch.get("name", "")
+                    cstate = ch.get("state") or "默认"
+                    if cname:
+                        add_item("characters", f"cast/{cname}.{cstate}.png", sid, {"character": cname, "state": cstate})
 
         for path in refs.get("props") or []:
             if isinstance(path, str) and path:
@@ -236,7 +248,7 @@ def build_assets_todo(spec: dict[str, Any], root: Path) -> dict[str, Any]:
             add_item("frames", refs["first_frame"], sid, {"frame_role": "first", "scene": scene})
         if mode == "A+" and refs.get("last_frame"):
             add_item("frames", refs["last_frame"], sid, {"frame_role": "last", "scene": scene})
-        if refs.get("sketch"):
+        if mode in {"A", "A+"} and refs.get("sketch"):
             add_item("sketches", refs["sketch"], sid, {"note": "用于首帧构图"})
         if mode == "B":
             for item in refs.get("mode_b_refs") or []:
@@ -245,19 +257,13 @@ def build_assets_todo(spec: dict[str, Any], root: Path) -> dict[str, Any]:
                     add_item("frames", path, sid, {"frame_role": "mode_b_ref"})
 
         if str(shot.get("audio_mode", "sfx_only")).lower() == "vo_lipsync":
-            audio_file = shot.get("audio_file") or f"audio/{ep}_{sid}.wav"
-            audio_file = Path(audio_file.replace("\\", "/")).as_posix()
-            full_audio = root / audio_file
-            if not full_audio.is_file():
-                todo["audio_vo"].append(
-                    {
-                        "path": audio_file,
-                        "speaker": shot.get("speaker", ""),
-                        "status": "missing",
-                        "shot_id": sid,
-                        "dialogue": shot.get("dialogue", ""),
-                    }
-                )
+            audio_file = shot.get("audio_file")
+            if isinstance(audio_file, str) and audio_file.strip():
+                add_item("audio_vo", audio_file, sid, {
+                    "speaker": shot.get("speaker", ""),
+                    "shot_id": sid,
+                    "dialogue": shot.get("dialogue", ""),
+                })
 
     summary = {k: len(v) for k, v in todo.items()}
     return {
@@ -270,7 +276,7 @@ def build_assets_todo(spec: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="PIPELINE_SPEC v4.0 单源分镜派生与增量派单工具")
+    parser = argparse.ArgumentParser(description="从分镜 JSON 派生总控、提示词与素材缺口表")
     parser.add_argument("--ep", help="集数编号，如 E01（默认读取 shots/<EP>_spec.json）")
     parser.add_argument("--spec", help="显式指定 spec JSON 路径")
     parser.add_argument("--root", default=".", help="项目根目录（默认当前目录）")
@@ -294,6 +300,9 @@ def main() -> int:
 
     try:
         spec = select_shots(json.loads(spec_path.read_text(encoding="utf-8")), args.shots)
+        master = build_master_md(spec)
+        prompts = build_prompts_md(spec)
+        todo_data = build_assets_todo(spec, root)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     ep = spec.get("episode") or args.ep or spec_path.stem.replace("_spec", "")
@@ -306,9 +315,8 @@ def main() -> int:
     prompts_path = out_dir / f"{ep}_prompts.md"
     todo_path = out_dir / f"{ep}_assets_todo.json"
 
-    master_path.write_text(build_master_md(spec), encoding="utf-8")
-    prompts_path.write_text(build_prompts_md(spec), encoding="utf-8")
-    todo_data = build_assets_todo(spec, root)
+    master_path.write_text(master, encoding="utf-8")
+    prompts_path.write_text(prompts, encoding="utf-8")
     todo_path.write_text(json.dumps(todo_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     print(f"[OK] 已从 {spec_path.name} 派生：")

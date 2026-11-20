@@ -3,10 +3,12 @@
   "title": "制作模板",
   "target_platform": "undecided",
   "aspect_ratio": "16:9",
+  "video_model": "Seedance 2.5",
   "shots": [
     {
       "id": "S01",
       "dur": 4,
+      "cut_duration": 3.5,
       "cadence": "Hold",
       "scene": "场景名",
       "camera_angle": "空场全景",
